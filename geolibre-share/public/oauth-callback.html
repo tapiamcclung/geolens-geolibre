@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connecting to GeoLibre…</title>
+</head>
+<body>
+  <p id="status">Completing GeoLibre authorization…</p>
+
+  <script>
+    const API = "https://share.dfu.etu.geoint.mx";
+    const CLIENT_ID = "geolibre-web";
+    const REDIRECT_URI =
+      `${window.location.origin}/oauth-callback.html`;
+
+    function fail(message) {
+      document.getElementById("status").textContent =
+        `Authorization failed: ${message}`;
+    }
+
+    async function main() {
+      const params = new URLSearchParams(location.search);
+      const error = params.get("error");
+
+      if (error) {
+        fail(`${error}${params.get("error_description")
+          ? ": " + params.get("error_description")
+          : ""}`);
+        return;
+      }
+
+      const code = params.get("code");
+      const state = params.get("state");
+
+      if (!code || !state) {
+        fail("Missing authorization code or state.");
+        return;
+      }
+
+      if (state !== sessionStorage.getItem("oauth_state")) {
+        fail("State validation failed. Please try connecting again.");
+        return;
+      }
+
+      const verifier =
+        sessionStorage.getItem("oauth_code_verifier");
+
+      if (!verifier) {
+        fail("PKCE verifier missing. Please start again.");
+        return;
+      }
+
+      const body = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        code,
+        code_verifier: verifier
+      });
+
+      const response = await fetch(`${API}/oauth/token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        fail(result.error_description || result.error ||
+          `Token exchange failed (HTTP ${response.status}).`);
+        return;
+      }
+
+      if (!result.access_token) {
+        fail("The server did not return an access token.");
+        return;
+      }
+
+      sessionStorage.setItem(
+        "geolibre_access_token", result.access_token
+      );
+
+      if (result.refresh_token) {
+        sessionStorage.setItem(
+          "geolibre_refresh_token", result.refresh_token
+        );
+      }
+
+      sessionStorage.removeItem("oauth_state");
+      sessionStorage.removeItem("oauth_code_verifier");
+
+      // Return to your frontend.
+      window.location.replace("/");
+    }
+
+    main().catch(error => fail(error.message));
+  </script>
+</body>
+</html>
